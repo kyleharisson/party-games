@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Fib! – Scan to Play</title>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt@5.16.1/dist/mqtt.min.js"></script>
+<script src="https://unpkg.com/qrcode-generator@2.0.4/dist/qrcode.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{min-height:100%;font-family:'Baloo 2',system-ui,sans-serif;background:#12233f;color:#fff}
+.screen{display:none;min-height:100vh;flex-direction:column;align-items:center;padding:28px 20px 40px;text-align:center}
+.screen.on{display:flex}
+.wrap{width:100%;max-width:460px}
+h1{font-size:46px;line-height:1}
+h2{font-size:27px;line-height:1.15;margin-bottom:10px}
+.sub{opacity:.7;margin:4px 0 18px}
+.card{background:#fff;color:#12233f;border-radius:22px;padding:22px 18px;font-size:23px;font-weight:700;line-height:1.3;margin:12px 0 18px;box-shadow:0 6px 0 #0004}
+.blank{display:inline-block;min-width:70px;border-bottom:3px solid #ff5ea0}
+input{width:100%;font:600 20px 'Baloo 2';padding:13px 16px;border-radius:14px;border:none;margin:6px 0;outline:none}
+#codeIn{text-transform:uppercase;text-align:center;letter-spacing:6px;font-size:26px}
+.btn{width:100%;border:none;border-radius:40px;padding:15px 20px;font:800 20px 'Baloo 2';margin:8px 0;cursor:pointer;background:#ffd23f;color:#12233f;box-shadow:0 5px 0 #0004}
+.btn:active{transform:translateY(3px);box-shadow:0 2px 0 #0004}
+.btn.ghost{background:none;color:#fff;border:2px solid #fff5;box-shadow:none}
+.btn.pink{background:#ff5ea0;color:#fff}
+.pill{display:inline-block;background:#ff5ea0;padding:2px 14px;border-radius:20px;font-size:14px;font-weight:700;margin-bottom:8px}
+.opt{width:100%;text-align:left;background:#ffffff14;color:#fff;border:2px solid #fff3;border-radius:16px;padding:14px 16px;font:700 20px 'Baloo 2';margin:6px 0;cursor:pointer}
+.opt:active{background:#ffffff30}
+.err{color:#ff8d8d;min-height:24px;font-size:16px}
+.p{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#ffffff12;border-radius:12px;margin:6px 0;font-size:19px}
+.p .you{font-size:13px;background:#ffd23f;color:#12233f;border-radius:10px;padding:0 8px;margin-left:6px}
+.rev{text-align:left;background:#ffffff12;border-radius:16px;padding:12px 16px;margin:8px 0;border:2px solid transparent}
+.rev.truth{border-color:#4ef08f;background:#4ef08f22}
+.rev .a{font-size:21px;font-weight:800}
+.rev .m{font-size:15px;opacity:.85}
+.score{display:flex;justify-content:space-between;padding:9px 16px;background:#ffffff12;border-radius:12px;margin:5px 0;font-size:19px}
+.score.top{background:#ffd23f;color:#12233f;font-weight:800}
+.plus{color:#4ef08f;font-weight:800}.score.top .plus{color:#127a3e}
+.how{font-size:15px;opacity:.85;line-height:1.45;background:#ffffff10;padding:14px;border-radius:16px;margin-top:16px;text-align:left}
+.rounds{display:flex;gap:8px;justify-content:center;margin:6px 0 4px}
+.rounds button{border:2px solid #fff4;background:none;color:#fff;font:600 16px 'Baloo 2';padding:4px 16px;border-radius:20px}
+.rounds button.sel{background:#fff;color:#12233f}
+#conn{position:fixed;top:10px;right:12px;font-size:12px;padding:2px 10px;border-radius:12px;background:#ffffff18;z-index:5;display:none}
+#conn.ok::before{content:'● ';color:#4ef08f}#conn.bad::before{content:'● ';color:#ff8d8d}
+.spin{font-size:46px;animation:b 1s infinite alternate}@keyframes b{to{transform:translateY(-8px)}}
+.note{font-size:14px;opacity:.6;margin-top:10px}
+.qr{background:#fff;border-radius:20px;padding:14px;display:inline-block;margin:6px 0}
+.qr img{display:block;width:230px;height:230px;image-rendering:pixelated}
+.code{font-size:44px;font-weight:800;letter-spacing:8px;color:#ffd23f;line-height:1}
+.or{opacity:.5;margin:14px 0 6px}
+#qrModal{position:fixed;inset:0;background:#12233ff2;display:none;align-items:center;justify-content:center;flex-direction:column;z-index:10;padding:20px;text-align:center}
+#qrBtn{position:fixed;top:8px;left:10px;z-index:6;border:none;background:#ffffff18;color:#fff;font:700 13px 'Baloo 2';padding:4px 12px;border-radius:12px;display:none}
+</style>
+</head>
+<body>
+<div id="conn" class="bad">connecting</div>
+<button id="qrBtn">📱 Show join code</button>
+
+<div id="qrModal">
+  <h2>Scan to join</h2>
+  <div class="qr" id="qrBox2"></div>
+  <div class="code" id="codeShow2"></div>
+  <button class="btn ghost" id="qrClose" style="max-width:300px">Close</button>
+</div>
+
+<!-- HOME -->
+<div id="s-home" class="screen on"><div class="wrap">
+  <h1>🤥 Fib!</h1>
+  <div class="sub">Fake answers. Real friends. Your own phones.</div>
+  <button class="btn" id="hostGo">🎉 Host a game</button>
+  <div class="or">or join with a code</div>
+  <input id="codeIn" maxlength="4" placeholder="CODE" autocomplete="off">
+  <button class="btn pink" id="joinGo">Join</button>
+  <div class="err" id="homeErr"></div>
+  <div class="how">
+    <b>How to play</b><br>
+    1. A weird-but-true fact appears with a blank.<br>
+    2. Everyone secretly types a <b>fake answer</b> that sounds real.<br>
+    3. Then everyone picks which answer they think is <b>true</b>.<br>
+    <b>+2</b> for finding the truth · <b>+1</b> for every friend your fib fools.
+  </div>
+</div></div>
+
+<div id="s-connecting" class="screen" style="justify-content:center"><div class="wrap">
+  <div class="spin">⏳</div><h2 id="connMsg">Connecting…</h2><div class="err" id="connErr"></div>
+  <button class="btn ghost" id="connBack" style="display:none">Back</button>
+</div></div>
+
+<div id="s-name" class="screen"><div class="wrap">
+  <h1>🤥 Fib!</h1>
+  <div class="sub" id="nameSub"></div>
+  <input id="nameIn" maxlength="14" placeholder="Your name" autocomplete="off">
+  <div class="err" id="nameErr"></div>
+  <button class="btn" id="nameGo">Let's go</button>
+</div></div>
+
+<div id="s-lobby" class="screen"><div class="wrap">
+  <div id="lobbyQR">
+    <h2>Scan to join</h2>
+    <div class="qr" id="qrBox"></div>
+    <div class="code" id="codeShow"></div>
+    <div class="note" style="margin-bottom:10px">or open this page and type the code</div>
+  </div>
+  <h2 id="lobbyTitle" style="margin-top:8px">Players</h2>
+  <div id="lobbyList"></div>
+  <div id="hostCtl">
+    <div style="margin-top:14px;opacity:.8">Rounds</div>
+    <div class="rounds" id="rounds"><button data-r="3">3</button><button data-r="5" class="sel">5</button><button data-r="8">8</button></div>
+    <div class="err" id="lobbyErr"></div>
+    <button class="btn" id="startGo">Everyone's in – start!</button>
+    <div class="note">Keep this phone's screen on – it runs the game.</div>
+  </div>
+  <div class="note" id="lobbyWait">Waiting for the host to start…</div>
+</div></div>
+
+<div id="s-write" class="screen"><div class="wrap">
+  <div class="pill" id="wTag"></div>
+  <h2>Write a believable fake</h2>
+  <div class="card" id="wQ"></div>
+  <input id="wIn" maxlength="40" placeholder="Your fib…" autocomplete="off">
+  <div class="err" id="wErr"></div>
+  <button class="btn" id="wGo">Lock it in 🔒</button>
+</div></div>
+
+<div id="s-vote" class="screen"><div class="wrap">
+  <div class="pill" id="vTag"></div>
+  <div class="card" id="vQ"></div>
+  <div style="opacity:.8;margin-bottom:4px">Which one is TRUE?</div>
+  <div id="vOpts"></div>
+</div></div>
+
+<div id="s-wait" class="screen"><div class="wrap">
+  <div class="pill" id="waitTag"></div>
+  <div class="spin">⏳</div>
+  <h2 id="waitTitle"></h2>
+  <div id="waitList"></div>
+  <button class="btn ghost" id="skipGo" style="display:none">Skip the slowpokes ⏩</button>
+</div></div>
+
+<div id="s-reveal" class="screen"><div class="wrap">
+  <div class="pill" id="rTag"></div>
+  <div class="card" id="rQ"></div>
+  <div id="rList"></div>
+  <h2 style="margin-top:16px">Scores</h2>
+  <div id="rScores"></div>
+  <button class="btn" id="rGo" style="margin-top:14px">Next round</button>
+  <div class="note" id="rWait">Waiting for the host to continue…</div>
+</div></div>
+
+<div id="s-end" class="screen"><div class="wrap">
+  <h1>🏆</h1>
+  <h2 id="winner"></h2>
+  <div id="eScores" style="margin:14px 0"></div>
+  <button class="btn" id="againGo">Play again</button>
+  <div class="note" id="eWait">Waiting for the host…</div>
+</div></div>
+
+<script>
+const QS=[
+["The national animal of Scotland is the ___.","unicorn"],
+["A group of flamingos is called a ___.","flamboyance"],
+["A group of owls is called a ___.","parliament"],
+["A group of pugs is called a ___.","grumble"],
+["Before it was called Pepsi, the drink was named ___.","Brad's Drink"],
+["Wombat poop is shaped like ___.","cubes"],
+["An octopus has ___ hearts.","three"],
+["In Switzerland it's illegal to own just one ___.","guinea pig"],
+["The dot over a lowercase \"i\" is called a ___.","tittle"],
+["The plastic tip of a shoelace is called an ___.","aglet"],
+["A baby puffin is called a ___.","puffling"],
+["Google's original name was ___.","BackRub"],
+["Cleopatra lived closer in time to the ___ than to the building of the Great Pyramid.","Moon landing"],
+["Sea otters hold ___ while they sleep so they don't drift apart.","hands"],
+["The first item ever sold on eBay was a broken ___.","laser pointer"],
+["In 1992, Singapore banned the sale of ___.","chewing gum"],
+["Kopi luwak coffee is made from beans eaten and pooped out by a ___.","civet"],
+["The oldest animal ever recorded was a 507-year-old clam named ___.","Ming"],
+["Butterflies taste things with their ___.","feet"],
+["A shrimp's heart is located in its ___.","head"],
+["The man who designed the Pringles can was buried in ___.","a Pringles can"],
+["Nintendo was founded in 1889 as a company making ___.","playing cards"],
+["Bali's Day of Silence, when even the airport shuts, is called ___.","Nyepi"],
+["Singapore's Merlion has the head of a lion and the body of a ___.","fish"],
+["In the 1830s, ketchup was sold as a ___.","medicine"],
+["The two M's in M&M's stand for Mars and ___.","Murrie"],
+["Gentoo penguins 'propose' to a mate by offering a ___.","pebble"],
+["Under all that white fur, a polar bear's skin is ___.","black"],
+["Koalas have fingerprints almost identical to ___.","humans"],
+["A day on Venus is longer than a ___ on Venus.","year"],
+["Okunoshima, an island in Japan, is overrun by friendly ___.","rabbits"],
+["In colonial America, lobster was so cheap it was fed to ___.","prisoners"],
+["The Twitter bird's official name was ___.","Larry"],
+["Bubble wrap was originally invented to be ___.","wallpaper"],
+["Abraham Lincoln is in the National ___ Hall of Fame.","Wrestling"],
+["The world's oldest recorded joke, from ancient Sumer, is about ___.","farting"],
+["Hot water can sometimes freeze faster than cold water. This is called the ___ effect.","Mpemba"],
+["Honey found in ancient Egyptian tombs was still ___.","edible"],
+["Bananas are technically classified as ___.","berries"],
+["The fear of long words is called ___.","hippopotomonstrosesquippedaliophobia"],
+["The Eiffel Tower grows about ___ taller in summer heat.","15 cm"],
+["A group of crows is called a ___.","murder"],
+["Sloths can hold their breath longer than ___.","dolphins"],
+["Cows have best friends and get ___ when separated.","stressed"]
+];
+const BROKERS=["wss://broker.hivemq.com:8884/mqtt","wss://broker.emqx.io:8084/mqtt"];
+const NS='fibparty/v1/';
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const norm=s=>String(s).toLowerCase().replace(/[^a-z0-9]/g,'');
+const shuffle=a=>{a=[...a];for(let j=a.length-1;j>0;j--){const r=Math.random()*(j+1)|0;[a[j],a[r]]=[a[r],a[j]]}return a};
+const qHTML=t=>esc(t).replace('___','<span class="blank">&nbsp;</span>');
+const LS={get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+let cur='s-home';
+function show(id){if(id===cur)return;document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));$(id).classList.add('on');cur=id;scrollTo(0,0)}
+
+let myId=LS.get('fib-id');if(!myId){myId=Math.random().toString(36).slice(2,10);LS.set('fib-id',myId)}
+let myName=LS.get('fib-name')||'';
+let client=null, code='', brokerIdx=0, S=null, isHost=false, H=null, rounds=5, sig='';
+const localFake={}, localVote={};
+
+/* ---------- connection ---------- */
+function connect(idx){
+  return new Promise((res,rej)=>{
+    const c=mqtt.connect(BROKERS[idx],{clientId:'fib_'+myId+'_'+Math.random().toString(36).slice(2,6),clean:true,connectTimeout:7000,reconnectPeriod:2000,keepalive:30});
+    let done=false;
+    const t=setTimeout(()=>{if(!done){done=true;c.end(true);rej()}},8000);
+    c.on('connect',()=>{setConn(true);if(!done){done=true;clearTimeout(t);res(c)}});
+    c.on('close',()=>setConn(false));c.on('offline',()=>setConn(false));
+    c.on('error',()=>{});
+  });
+}
+async function connectAny(pref){
+  const order=pref!=null?[pref,...BROKERS.map((_,i)=>i).filter(i=>i!==pref)]:BROKERS.map((_,i)=>i);
+  for(const i of order){try{const c=await connect(i);brokerIdx=i;return c}catch(e){}}
+  throw new Error('no broker');
+}
+function setConn(ok){const e=$('conn');e.style.display='block';e.className=ok?'ok':'bad';e.textContent=ok?'live':'reconnecting'}
+const T=()=>NS+code;
+
+/* ---------- start flows ---------- */
+function randCode(){const A='ABCDEFGHJKLMNPQRSTUVWXYZ';let s='';for(let i=0;i<4;i++)s+=A[Math.random()*A.length|0];return s}
+async function begin(asHost,c,pref){
+  code=c;$('connErr').textContent='';$('connBack').style.display='none';$('connMsg').textContent='Connecting…';show('s-connecting');
+  try{client=await connectAny(pref)}catch(e){$('connErr').textContent="Couldn't connect. Check your internet and try again.";$('connBack').style.display='block';return}
+  isHost=asHost;
+  history.replaceState(null,'',location.pathname+'?room='+code+'&b='+brokerIdx);
+  client.on('message',(topic,buf)=>{let m;try{m=JSON.parse(buf.toString())}catch(e){return}
+    if(topic===T()+'/state')onState(m);else if(topic===T()+'/in'&&isHost)hostIn(m)});
+  client.subscribe(T()+'/state',{qos:1});
+  if(isHost){
+    client.subscribe(T()+'/in',{qos:1});
+    const saved=LS.get('fib-host');
+    if(saved&&saved.code===code&&saved.H){H=saved.H;H.priv=H.priv||{fakes:{},votes:{},truth:-1}}
+    else H={code,id:Math.random().toString(36).slice(2,7),phase:'lobby',round:0,rounds:5,qs:[],players:[],opts:null,res:null,gain:null,priv:{fakes:{},votes:{},truth:-1},seen:{}};
+    H.seen=H.seen||{};
+    if(myName)hostIn({ty:'join',id:myId,n:myName});
+    publish();
+  }
+  drawQR();
+  if(!myName){$('nameSub').textContent='Room '+code;show('s-name')}else{send({ty:'join',id:myId,n:myName});render()}
+  setInterval(loop,3000);
+}
+$('hostGo').onclick=()=>{const saved=LS.get('fib-host');const c=saved&&saved.code&&Date.now()-(saved.at||0)<3*3600e3?saved.code:randCode();begin(true,c)};
+$('joinGo').onclick=()=>{const c=$('codeIn').value.trim().toUpperCase();if(!/^[A-Z]{4}$/.test(c)){$('homeErr').textContent='Codes are 4 letters';return}begin(false,c)};
+$('codeIn').onkeydown=e=>{if(e.key==='Enter')$('joinGo').click()};
+$('connBack').onclick=()=>show('s-home');
+$('nameGo').onclick=()=>{const n=$('nameIn').value.trim();if(!n){$('nameErr').textContent='Type your name';return}
+  myName=n.slice(0,14);LS.set('fib-name',myName);send({ty:'join',id:myId,n:myName});render()};
+$('nameIn').onkeydown=e=>{if(e.key==='Enter')$('nameGo').click()};
+$('nameIn').value=myName;
+
+function send(m){if(isHost){hostIn(m);return}if(client)client.publish(T()+'/in',JSON.stringify(m),{qos:1})}
+
+/* ---------- QR ---------- */
+function joinURL(){return location.origin+location.pathname+'?room='+code+'&b='+brokerIdx}
+function drawQR(){
+  try{const q=qrcode(0,'M');q.addData(joinURL());q.make();const img=q.createDataURL(8,2);
+    $('qrBox').innerHTML=$('qrBox2').innerHTML=`<img src="${img}" alt="QR code">`}catch(e){}
+  $('codeShow').textContent=$('codeShow2').textContent=code;
+}
+$('qrBtn').onclick=()=>$('qrModal').style.display='flex';
+$('qrClose').onclick=()=>$('qrModal').style.display='none';
+
+/* ---------- host engine ---------- */
+function pub(){const {priv,seen,...pubState}=H;return pubState}
+function publish(){
+  const k=H.id+'-'+H.round;
+  H.players.forEach(p=>{p.on=p.id===myId||Date.now()-(H.seen[p.id]||0)<15000;
+    p.done=H.phase==='write'?H.priv.fakes[p.id]!=null:H.phase==='vote'?H.priv.votes[p.id]!=null:false});
+  H.v=Date.now();
+  LS.set('fib-host',{code,at:Date.now(),H});
+  if(client)client.publish(T()+'/state',JSON.stringify(pub()),{qos:1,retain:true});
+  onState(JSON.parse(JSON.stringify(pub())));
+}
+function hostIn(m){
+  if(!m||typeof m.id!=='string')return;
+  H.seen[m.id]=Date.now();
+  let p=H.players.find(x=>x.id===m.id);
+  if(m.ty==='join'||m.ty==='hb'){
+    const n=String(m.n||'').slice(0,14);
+    if(!p&&n&&H.players.length<12){H.players.push({id:m.id,n,s:0});publish();}
+    else if(p&&n&&p.n!==n){p.n=n;publish()}
+    else if(p&&!p.on)publish();
+    return;
+  }
+  if(!p)return;
+  const k=H.id+'-'+H.round;
+  if(m.ty==='fake'&&H.phase==='write'&&m.k===k){const t=String(m.t||'').slice(0,40).trim();if(t&&H.priv.fakes[m.id]==null){H.priv.fakes[m.id]=t;publish();step()}}
+  if(m.ty==='vote'&&H.phase==='vote'&&m.k===k&&Number.isInteger(m.o)&&H.opts[m.o]&&!H.opts[m.o].a.includes(m.id)&&H.priv.votes[m.id]==null){H.priv.votes[m.id]=m.o;publish();step()}
+}
+function step(){
+  const act=H.players.filter(p=>p.id===myId||Date.now()-(H.seen[p.id]||0)<15000);
+  if(H.phase==='write'&&act.length&&act.every(p=>H.priv.fakes[p.id]!=null))toVote();
+  else if(H.phase==='vote'){const need=act.filter(p=>H.opts.some(o=>!o.a.includes(p.id)));if(need.every(p=>H.priv.votes[p.id]!=null))toReveal()}
+}
+function startRound(r){H.round=r;H.phase='write';H.opts=H.res=H.gain=null;H.priv={fakes:{},votes:{},truth:-1};publish()}
+function startGame(){
+  if(H.players.length<2){$('lobbyErr').textContent='Need at least 2 players';return}
+  H.rounds=rounds;H.qs=shuffle(QS.map((_,i)=>i)).slice(0,rounds);H.players.forEach(p=>p.s=0);H.id=Math.random().toString(36).slice(2,7);startRound(1);
+}
+function toVote(){
+  const truth=QS[H.qs[H.round-1]][1],g={};g[norm(truth)]={t:truth,a:[],truth:true};
+  for(const p of H.players){const f=H.priv.fakes[p.id];if(f==null)continue;const n=norm(f);if(!g[n])g[n]={t:f,a:[]};if(!g[n].truth)g[n].a.push(p.id)}
+  const opts=shuffle(Object.values(g));H.priv.truth=opts.findIndex(o=>o.truth);
+  H.opts=opts.map(o=>({t:o.t,a:o.a}));H.phase='vote';publish();
+}
+function toReveal(){
+  const gain={};H.players.forEach(p=>gain[p.id]=0);const nm=id=>(H.players.find(p=>p.id===id)||{}).n||'?';
+  const res=H.opts.map((o,i)=>{
+    const pk=H.players.filter(p=>H.priv.votes[p.id]===i).map(p=>p.id);
+    if(i===H.priv.truth)pk.forEach(id=>gain[id]+=2);else o.a.forEach(a=>gain[a]+=pk.length);
+    return{t:o.t,truth:i===H.priv.truth,a:o.a.map(nm),k:pk.map(nm)};
+  }).filter(r=>r.truth||r.a.length).sort((a,b)=>(b.truth-a.truth)||(b.k.length-a.k.length));
+  H.players.forEach(p=>p.s+=gain[p.id]||0);
+  H.res=res;H.gain=gain;H.phase='reveal';publish();
+}
+$('rounds').onclick=e=>{const r=e.target.dataset.r;if(!r)return;rounds=+r;[...$('rounds').children].forEach(b=>b.classList.toggle('sel',b===e.target))};
+$('startGo').onclick=()=>{$('lobbyErr').textContent='';startGame()};
+$('skipGo').onclick=()=>{if(!isHost)return;if(H.phase==='write')toVote();else if(H.phase==='vote')toReveal()};
+$('rGo').onclick=()=>{if(!isHost)return;if(H.round>=H.rounds){H.phase='end';publish()}else startRound(H.round+1)};
+$('againGo').onclick=()=>{if(!isHost)return;H.phase='lobby';H.round=0;H.players.forEach(p=>p.s=0);publish()};
+
+/* ---------- everyone ---------- */
+function onState(m){if(!m||!Array.isArray(m.players))return;if(S&&m.v&&S.v&&m.v<S.v)return;S=m;render()}
+function loop(){
+  if(isHost){const before=JSON.stringify(H.players.map(p=>p.on));H.seen[myId]=Date.now();
+    const now=H.players.map(p=>p.id===myId||Date.now()-(H.seen[p.id]||0)<15000);
+    if(JSON.stringify(now)!==before){publish();step()}return}
+  if(!client||!myName)return;
+  send({ty:'hb',id:myId,n:myName});
+  if(!S)return;const me=S.players.find(p=>p.id===myId);if(!me){send({ty:'join',id:myId,n:myName});return}
+  const k=S.id+'-'+S.round;
+  if(S.phase==='write'&&localFake[k]!=null&&!me.done)send({ty:'fake',id:myId,k,t:localFake[k]});
+  if(S.phase==='vote'&&localVote[k]!=null&&!me.done)send({ty:'vote',id:myId,k,o:localVote[k]});
+}
+function render(){
+  if(!myName){show('s-name');return}
+  $('qrBtn').style.display=code?'block':'none';
+  if(!S){$('connMsg').textContent=isHost?'Setting up…':'Looking for room '+code+'…';show('s-connecting');return}
+  const me=S.players.find(p=>p.id===myId);
+  if(S.phase==='lobby'||!me){
+    if(S.phase!=='lobby'&&!me){$('connMsg').textContent="Joining… you'll be in from the next round";show('s-connecting');return}
+    $('lobbyList').innerHTML=S.players.map(p=>`<div class="p"><span>${esc(p.n)}${p.id===myId?'<span class="you">you</span>':''}</span><span>${p.on?'🟢':'📴'}</span></div>`).join('')||'<div class="note">Nobody yet…</div>';
+    $('lobbyTitle').textContent=`Players (${S.players.length})`;
+    $('hostCtl').style.display=isHost?'block':'none';$('lobbyWait').style.display=isHost?'none':'block';
+    $('lobbyQR').style.display=isHost?'block':'none';
+    show('s-lobby');return;
+  }
+  const k=S.id+'-'+S.round,tag=`Round ${S.round} of ${S.rounds}`,q=QS[S.qs[S.round-1]]||['',''];
+  if(S.phase==='write'){
+    if(me.done||localFake[k]!=null){wait(tag,'Fib locked in! Waiting for…');return}
+    if(sig!=='w'+k){sig='w'+k;$('wTag').textContent=tag;$('wQ').innerHTML=qHTML(q[0]);$('wIn').value='';$('wErr').textContent=''}
+    show('s-write');return;
+  }
+  if(S.phase==='vote'){
+    const mine=(S.opts||[]).map((o,i)=>({o,i})).filter(x=>!x.o.a.includes(myId));
+    if(me.done||localVote[k]!=null||!mine.length){wait(tag,'Vote in! Waiting for…');return}
+    if(sig!=='v'+k){sig='v'+k;$('vTag').textContent=tag;$('vQ').innerHTML=qHTML(q[0]);
+      $('vOpts').innerHTML=mine.map(x=>`<button class="opt" data-o="${x.i}">${esc(x.o.t)}</button>`).join('')}
+    show('s-vote');return;
+  }
+  if(S.phase==='reveal'){
+    if(sig!=='r'+k){sig='r'+k;
+      $('rTag').textContent=tag+' · Results';
+      $('rQ').innerHTML=esc(q[0]).replace('___',`<span style="color:#18a85a">${esc(q[1])}</span>`);
+      $('rList').innerHTML=(S.res||[]).map(o=>`<div class="rev ${o.truth?'truth':''}"><div class="a">${o.truth?'✅ ':'🤥 '}${esc(o.t)}</div>
+        <div class="m">${o.truth?'The TRUTH':'Fib by '+esc(o.a.join(' & '))} · ${o.k.length?'picked by '+esc(o.k.join(', ')):'nobody fell for it'}</div></div>`).join('');
+      $('rScores').innerHTML=board(S.gain);
+      $('rGo').textContent=S.round>=S.rounds?'Final results 🏆':'Next round';}
+    $('rGo').style.display=isHost?'block':'none';$('rWait').style.display=isHost?'none':'block';
+    show('s-reveal');return;
+  }
+  if(S.phase==='end'){
+    if(sig!=='e'+S.id){sig='e'+S.id;const top=Math.max(...S.players.map(p=>p.s));const w=S.players.filter(p=>p.s===top).map(p=>p.n);
+      $('winner').textContent=w.length>1?w.join(' & ')+' tie!':w[0]+' wins!';$('eScores').innerHTML=board()}
+    $('againGo').style.display=isHost?'block':'none';$('eWait').style.display=isHost?'none':'block';
+    show('s-end');
+  }
+}
+function board(gain){
+  return [...S.players].sort((a,b)=>b.s-a.s).map((p,i)=>`<div class="score ${i===0&&p.s>0?'top':''}"><span>${esc(p.n)}${p.id===myId?' (you)':''}</span><span>${gain&&gain[p.id]?`<span class="plus">+${gain[p.id]}</span> `:''}${p.s}</span></div>`).join('');
+}
+function wait(tag,title){
+  sig='wait';$('waitTag').textContent=tag;$('waitTitle').textContent=title;
+  $('waitList').innerHTML=S.players.map(p=>`<div class="p"><span>${esc(p.n)}${p.id===myId?'<span class="you">you</span>':''}</span><span>${!p.on?'📴':p.done?'✅':'✍️'}</span></div>`).join('');
+  $('skipGo').style.display=isHost?'block':'none';show('s-wait');
+}
+$('wGo').onclick=()=>{
+  if(!S)return;const k=S.id+'-'+S.round,v=$('wIn').value.trim();
+  if(!v){$('wErr').textContent='Type something!';return}
+  if(norm(v)===norm(QS[S.qs[S.round-1]][1])){$('wErr').textContent="😱 That's the REAL answer! Make up a fake one.";return}
+  localFake[k]=v.slice(0,40);$('wIn').blur();send({ty:'fake',id:myId,k,t:localFake[k]});render();
+};
+$('wIn').onkeydown=e=>{if(e.key==='Enter')$('wGo').click()};
+$('vOpts').onclick=e=>{const b=e.target.closest('[data-o]');if(!b||!S)return;const k=S.id+'-'+S.round;
+  localVote[k]=+b.dataset.o;send({ty:'vote',id:myId,k,o:localVote[k]});render()};
+
+/* ---------- auto-join from QR ---------- */
+(function(){const u=new URLSearchParams(location.search);const r=(u.get('room')||'').toUpperCase();
+  if(/^[A-Z]{4}$/.test(r)){const saved=LS.get('fib-host');const b=parseInt(u.get('b'));
+    begin(!!(saved&&saved.code===r),r,Number.isInteger(b)&&BROKERS[b]?b:null)}})();
+</script>
+</body>
+</html>
